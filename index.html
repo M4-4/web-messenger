@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Web-Messenger mit Code</title>
+  <style>
+    body { font-family: Arial; max-width: 600px; margin: auto; padding: 1rem; }
+    #chat, #messageForm { display: none; }
+    #messages { border: 1px solid #ccc; padding: .5rem; height: 300px; overflow-y: scroll; }
+    input, button { padding: .5rem; margin: .2rem 0; width: 100%; box-sizing: border-box; }
+  </style>
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+  <h1>Browser-Chat mit Zugangscode</h1>
+
+  <div id="codeSection">
+    <p>Gib deinen Zugangscode ein:</p>
+    <input id="codeInput" placeholder="Code" />
+    <button id="joinBtn">Beitreten</button>
+    <p id="codeError" style="color:red;"></p>
+  </div>
+
+  <div id="chat">
+    <div id="messages"></div>
+    <form id="messageForm">
+      <input id="msgInput" placeholder="Deine Nachricht…" autocomplete="off" />
+      <button>Senden</button>
+    </form>
+  </div>
+
+  <script>
+    // Firebase-Konfiguration: ersetze Platzhalter mit deinen Werten
+    const firebaseConfig = {
+      apiKey: "1234",
+      authDomain: "web-messenger.firebaseapp.com",
+      databaseURL: "https://web-messenger.firebaseio.com",
+      projectId: "web-messenger",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let chatCode = null;
+
+    document.getElementById('joinBtn').onclick = async () => {
+      const code = document.getElementById('codeInput').value.trim();
+      const codeRef = db.ref('accessCodes/' + code);
+      const snap = await codeRef.get();
+
+      if (!snap.exists() || snap.val().expiresAt < Date.now()) {
+        document.getElementById('codeError').textContent = 'Ungültiger oder abgelaufener Code';
+        return;
+      }
+
+      const data = snap.val();
+      if (data.currentUsers >= data.maxUsers) {
+        document.getElementById('codeError').textContent = 'Code-Limit erreicht';
+        return;
+      }
+
+      // Session-Tracking
+      await codeRef.child('currentUsers').set(data.currentUsers + 1);
+      await codeRef.child('sessions').push({
+        userAgent: navigator.userAgent,
+        timestamp: Date.now()
+      });
+
+      chatCode = code;
+      document.getElementById('codeSection').style.display = 'none';
+      document.getElementById('chat').style.display = 'block';
+      startChat();
+    };
+
+    function startChat() {
+      const messagesRef = db.ref('chats/' + chatCode + '/messages');
+      messagesRef.on('child_added', snap => {
+        const msg = snap.val();
+        const div = document.createElement('div');
+        div.textContent = '[' + new Date(msg.timestamp).toLocaleTimeString() + '] '
+                          + msg.sender + ': ' + msg.text;
+        document.getElementById('messages').append(div);
+        div.scrollIntoView();
+      });
+
+      document.getElementById('messageForm').onsubmit = e => {
+        e.preventDefault();
+        const text = document.getElementById('msgInput').value.trim();
+        if (!text) return;
+        messagesRef.push({
+          sender: 'Gast',
+          text,
+          timestamp: Date.now()
+        });
+        document.getElementById('msgInput').value = '';
+      };
+    }
+  </script>
+</body>
+</html>
+
+

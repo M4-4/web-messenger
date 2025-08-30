@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Dashboard – Code-Verwaltung</title>
+  <style>
+    body { font-family: Arial; margin: 1rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: .5rem; text-align: left; }
+    input, button { padding: .5rem; margin: .2rem 0; }
+    .hidden { display: none; }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+  <h1>Admin Dashboard</h1>
+
+  <div id="loginSection">
+    <input id="email" type="email" placeholder="Admin-E-Mail" />
+    <input id="pw" type="password" placeholder="Passwort" />
+    <button id="loginBtn">Login</button>
+    <p id="loginError" style="color:red;"></p>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <button id="logoutBtn">Logout</button>
+    <h2>Codes verwalten</h2>
+    <button id="createCodeBtn">Neuen Code erstellen</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Ablauf</th>
+          <th>Max Nutzer</th>
+          <th>Aktuell</th>
+          <th>Sessions</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody id="codesTableBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Firebase-Konfiguration: ersetze Platzhalter
+   const firebaseConfig = {
+      apiKey: "1234",
+      authDomain: "web-messenger.firebaseapp.com",
+      databaseURL: "https://web-messenger.firebaseio.com",
+      projectId: "web-messenger",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.database();
+
+    const ADMIN_EMAILS = ["admin@beispiel.de"];
+
+    const loginSection = document.getElementById('loginSection');
+    const dashboard     = document.getElementById('dashboard');
+    const loginBtn      = document.getElementById('loginBtn');
+    const logoutBtn     = document.getElementById('logoutBtn');
+    const loginError    = document.getElementById('loginError');
+    const codesTbody    = document.getElementById('codesTableBody');
+    const createCodeBtn = document.getElementById('createCodeBtn');
+
+    loginBtn.onclick = () => {
+      const email = document.getElementById('email').value;
+      const pw    = document.getElementById('pw').value;
+      auth.signInWithEmailAndPassword(email, pw)
+        .catch(err => loginError.textContent = err.message);
+    };
+
+    logoutBtn.onclick = () => auth.signOut();
+
+    auth.onAuthStateChanged(user => {
+      if (user && ADMIN_EMAILS.includes(user.email)) {
+        loginSection.classList.add('hidden');
+        dashboard.classList.remove('hidden');
+        loadCodes();
+      } else {
+        loginSection.classList.remove('hidden');
+        dashboard.classList.add('hidden');
+      }
+    });
+
+    function loadCodes() {
+      db.ref('accessCodes').on('value', snap => {
+        codesTbody.innerHTML = '';
+        const codes = snap.val() || {};
+        Object.entries(codes).forEach(([code, data]) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${code}</td>
+            <td>${new Date(data.expiresAt).toLocaleString()}</td>
+            <td>${data.maxUsers}</td>
+            <td>${data.currentUsers || 0}</td>
+            <td id="sess-${code}">Lade…</td>
+            <td>
+              <button data-code="${code}" class="editBtn">Bearb.</button>
+              <button data-code="${code}" class="delBtn">Lösch.</button>
+            </td>
+          `;
+          codesTbody.appendChild(tr);
+
+          db.ref(`accessCodes/${code}/sessions`).once('value', sSnap => {
+            document.getElementById(`sess-${code}`).textContent = sSnap.numChildren();
+          });
+        });
+
+        document.querySelectorAll('.editBtn').forEach(b => b.onclick = editCode);
+        document.querySelectorAll('.delBtn').forEach(b => deleteCode);
+      });
+    }
+
+    createCodeBtn.onclick = () => {
+      const codeValue = prompt('Neuen Code eingeben:').trim();
+      if (!codeValue) return;
+      const expiresAt = Date.now() + 24*60*60*1000;
+      const maxUsers  = parseInt(prompt('Maximale Nutzerzahl:'), 10) || 10;
+      db.ref(`accessCodes/${codeValue}`).set({
+        codeValue, expiresAt, maxUsers, currentUsers: 0
+      });
+    };
+
+    function editCode(evt) {
+      const code = evt.target.dataset.code;
+      db.ref(`accessCodes/${code}`).once('value', snap => {
+        const data = snap.val();
+        const newExpire = Date.parse(prompt(
+          'Neues Ablaufdatum (JJJJ-MM-TT hh:mm):',
+          new Date(data.expiresAt).toISOString().slice(0,16).replace('T',' ')
+        ));
+        const newMax = parseInt(prompt(
+          'Neues max. Nutzer (aktuell ' + data.maxUsers + '):',
+          data.maxUsers
+        ), 10);
+        if (newExpire && newMax) {
+          db.ref(`accessCodes/${code}`).update({
+            expiresAt: newExpire,
+            maxUsers: newMax
+          });
+        }
+      });
+    }
+
+    function deleteCode(evt) {
+      const code = evt.target.dataset.code;
+      if (confirm(`Code "${code}" wirklich löschen?`)) {
+        db.ref(`accessCodes/${code}`).remove();
+      }
+    }
+  </script>
+</body>
+</html>
+
+
+const firebaseConfig = {
+  apiKey: "DEIN_API_KEY",
+  authDomain: "dein-projekt.firebaseapp.com",
+  databaseURL: "https://dein-projekt.firebaseio.com",
+  projectId: "dein-projekt"
+};
+
+// Firebase-Konfiguration
